@@ -65,6 +65,9 @@ sealed abstract class PathM[M[_]] private[bmf](implicit val F: MonadThrowable[M]
 	} yield verified
 
 
+	def asFile: M[FileM[M]] = FileM.checked(file)
+	def asDir: M[DirM[M]] = DirM.checked(file)
+
 	def isLink(): M[Boolean] = attempt(file.isSymbolicLink)
 	def isHidden: M[Boolean] = attempt(file.isHidden)
 
