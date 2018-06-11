@@ -227,6 +227,7 @@ class DirM[M[_]] private[bmf](val file: File)(implicit F: MonadThrowable[M]) ext
 object DirM {
 	def apply[M[_]](file: File)(implicit F: MonadThrowable[M]): DirM[M] = new DirM[M](file)
 	def checked[M[_]](file: File)(implicit F: MonadThrowable[M]): M[DirM[M]] = DirM[M](file).checked
+	def home[M[_]](implicit F: MonadThrowable[M]): DirM[M] = apply(File.home)
 }
 
 
@@ -244,8 +245,6 @@ object PathM {
 
 	def apply[M[_]](path: Path)(implicit F: MonadThrowable[M]): PathM[M] = apply(File(path))
 	def apply[M[_]](file: java.io.File)(implicit F: MonadThrowable[M]): PathM[M] = apply(file.toScala)
-
-	def home[M[_] : MonadThrowable]: DirM[M] = File.home.liftDir
 
 
 	def newTempFile[M[_]]()(implicit F: MonadThrowable[M]): M[FileM[M]] =
