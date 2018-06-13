@@ -8,7 +8,7 @@ Typesafe File IO with monad of your choice
 
 ## Features
 
- * Separate types for plain file and directory
+ * Different types for plain file and directory
  * Only methods with side effect return a monad
  * Uses `cat-core`'s `MonadError[F[_], Throwable]` for flexibility
  * Backed by [better-files](https://github.com/pathikrit/better-files) with conversions from and to 
@@ -26,6 +26,7 @@ Lift any `better.files.File` instance to a `FileM[_]` by:
 ```scala
 import better.files.File
 import net.kurobako.bmf.PathM._
+import net.kurobako.bmf.FileM
 import cats.effect.IO
 
 val file = File.home / "foo"

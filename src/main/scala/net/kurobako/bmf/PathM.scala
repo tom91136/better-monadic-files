@@ -1,6 +1,6 @@
 package net.kurobako.bmf
 
-import java.io.IOException
+import java.io._
 import java.nio.charset.Charset
 import java.nio.file.{FileSystems, Path, WatchService}
 import java.security.MessageDigest
@@ -8,6 +8,7 @@ import java.security.MessageDigest
 import better.files.File._
 import better.files.{DefaultCharset, File, _}
 import cats.MonadError
+import cats.effect.Resource
 import cats.implicits._
 import net.kurobako.bmf.FileM.Digest
 import net.kurobako.bmf.PathM.{Attrs, LinkOps, MonadThrowable, VisitOps}
@@ -25,11 +26,7 @@ import scala.util.control.NonFatal
 //noinspection AccessorLikeMethodIsEmptyParen
 sealed abstract class PathM[M[_]] private[bmf](implicit val F: MonadThrowable[M]) {
 
-	// data PathM m = PathM m deriving Show
-	// PathM :: MonadError Throwable m => PathM m
-
 	type S <: PathM[M]
-
 
 	@inline val file: File
 	@inline private[bmf] val newInstance: File => S
@@ -47,30 +44,27 @@ sealed abstract class PathM[M[_]] private[bmf](implicit val F: MonadThrowable[M]
 	def exists(implicit lops: LinkOps = LinkOptions.default): M[Boolean] =
 		attempt(file.exists(lops))
 
-	def verifiedExists()(implicit lops: LinkOps = LinkOptions.default): M[Option[Boolean]] = this match {
-		case x: FileM[M] =>
-			if (x.file.isRegularFile) attempt(file.verifiedExists(lops))
-			else F.raiseError(new IOException(s"Expected $file to be a File but was a not"))
-		case x: DirM[M]  =>
-			if (x.file.isDirectory) attempt(file.verifiedExists(lops))
-			else F.raiseError(new IOException(s"Expected $file to be a directory but was a not"))
-	}
+	def verifiedExists()(implicit lops: LinkOps = LinkOptions.default): M[Option[Boolean]] =
+		attempt(file.verifiedExists(lops))
 
 	def checked(implicit lops: LinkOps = LinkOptions.default): M[S] = for {
 		exists <- verifiedExists()(lops)
 		verified <- exists match {
-			case Some(true) => F.pure(instance)
+			case Some(true) => this match {
+				case x: FileM[M] if x.file.isDirectory  =>
+					F.raiseError[S](new IOException(s"Expected $file to be a regular file(FileM) but was a not"))
+				case x: DirM[M] if x.file.isRegularFile =>
+					F.raiseError[S](new IOException(s"Expected $file to be a directory(DirM) but was a not"))
+			}
 			case _          => F.raiseError[S](new IOException(s"$file does not exist"))
 		}
-	} yield verified
+	} yield instance
 
-
-	def asFile: M[FileM[M]] = FileM.checked(file)
-	def asDir: M[DirM[M]] = DirM.checked(file)
+	def asFile(): M[FileM[M]] = FileM.checked(file)
+	def asDir(): M[DirM[M]] = DirM.checked(file)
 
 	def isLink(): M[Boolean] = attempt(file.isSymbolicLink)
-	def isHidden: M[Boolean] = attempt(file.isHidden)
-
+	def isHidden(): M[Boolean] = attempt(file.isHidden)
 
 	/** Copy the file to the specified directory */
 	def copyTo(dir: DirM[M]): M[S] = attempt(newInstance(file.copyToDirectory(dir.file)))
@@ -84,14 +78,15 @@ sealed abstract class PathM[M[_]] private[bmf](implicit val F: MonadThrowable[M]
 	def rename(name: String): M[S] = attempt(newInstance(file.renameTo(name)))
 
 
-	def watch(watchService: WatchService, events: File.Events = File.Events.all): M[S] =
+	def watch(watchService: WatchService, events: Events = Events.all): M[S] =
 		attempt {file.register(watchService, events); instance}
 
 	def name: Option[String] = file.nameOption
 	def nameOrEmpty: String = file.name
 
 	def parent(): Option[DirM[M]] = file.parentOption.map {new DirM[M](_)}
-	def siblings(): M[Iterator[PathM[M]]] = attempt(file.siblings.map {PathM[M]})
+	// XXX not ideal
+	def siblings(): M[Iterator[M[PathM[M]]]] = attempt(file.siblings.map {PathM.checked(_)})
 
 
 	def create(mkParent: Boolean = false)(implicit attrs: Attrs = Attributes.default,
@@ -122,7 +117,7 @@ sealed abstract class PathM[M[_]] private[bmf](implicit val F: MonadThrowable[M]
   * @param F the [[ MonadError[F[_], A] ]] instance
   * @tparam M the monad type
   */
-class FileM[M[_]] private[bmf](val file: File)(implicit F: MonadThrowable[M]) extends PathM[M] {
+final case class FileM[M[_]] private[bmf](file: File)(implicit F: MonadThrowable[M]) extends PathM[M] {
 
 	type S = FileM[M]
 	private[bmf] override val newInstance: File => FileM[M] = new FileM[M](_)
@@ -152,6 +147,24 @@ class FileM[M[_]] private[bmf](val file: File)(implicit F: MonadThrowable[M]) ex
 
 	def asBytes(): M[Array[Byte]] = attempt(file.loadBytes)
 
+	private def resourceFromCloseable[A <: Closeable](a: => A): Resource[M, A] =
+		Resource.make(attempt(a)) { x => attempt(x.close()) }
+
+	def bufferedReader(implicit charset: Charset = DefaultCharset): Resource[M, BufferedReader] =
+		resourceFromCloseable(file.newBufferedReader(charset))
+	def bufferedWriter(implicit charset: Charset = DefaultCharset,
+					   openOptions: OpenOptions = OpenOptions.default): Resource[M, BufferedWriter] =
+		resourceFromCloseable(file.newBufferedWriter(charset, openOptions))
+
+	def inputStream(implicit openOptions: OpenOptions = OpenOptions.default): Resource[M, InputStream] =
+		resourceFromCloseable(file.newInputStream(openOptions))
+	def outputStream(implicit openOptions: OpenOptions = OpenOptions.default): Resource[M, OutputStream] =
+		resourceFromCloseable(file.newOutputStream(openOptions))
+
+	def fileReader(): Resource[M, FileReader] =
+		resourceFromCloseable(file.newFileReader)
+
+
 	def append(s: String): M[FileM[M]] = attempt(newInstance(file.append(s)))
 
 	def overwrite(s: String): M[FileM[M]] = attempt(newInstance(file.overwrite(s)))
@@ -174,8 +187,14 @@ class FileM[M[_]] private[bmf](val file: File)(implicit F: MonadThrowable[M]) ex
 }
 object FileM {
 
-	def apply[M[_]](file: File)(implicit F: MonadThrowable[M]): FileM[M] = new FileM[M](file)
-	def checked[M[_]](file: File)(implicit F: MonadThrowable[M]): M[FileM[M]] = FileM[M](file).checked
+	def unchecked[M[_]](file: File)(implicit F: MonadThrowable[M]): FileM[M] = new FileM[M](file)
+	def checked[M[_]](file: File)(implicit F: MonadThrowable[M]): M[FileM[M]] = new FileM[M](file).checked
+	def apply[M[_]](file: File)(implicit F: MonadThrowable[M]): M[FileM[M]] = checked(file)
+
+
+	def newTempFile[M[_]]()(implicit F: MonadThrowable[M]): M[FileM[M]] =
+		F.catchNonFatal(unchecked(newTemporaryFile()))
+
 
 	/** Wraps a backing [[java.security.MessageDigest]] */
 	case class Digest(backing: MessageDigest) extends AnyVal
@@ -198,9 +217,10 @@ object FileM {
   * @param F the [[ MonadError[F[_], A] ]] instance
   * @tparam M the monad type
   */
-class DirM[M[_]] private[bmf](val file: File)(implicit F: MonadThrowable[M]) extends PathM[M] {
+final case class DirM[M[_]] private[bmf](file: File)(implicit F: MonadThrowable[M]) extends PathM[M] {
 
 	type S = DirM[M]
+
 	private[bmf] override val newInstance: File => DirM[M] = new DirM[M](_)
 	private[bmf] override val instance   : DirM[M]         = this
 
@@ -217,17 +237,27 @@ class DirM[M[_]] private[bmf](val file: File)(implicit F: MonadThrowable[M]) ext
 	def count(recursive: Boolean = false)(implicit vops: VisitOps = VisitOptions.default): M[Int] =
 		attempt((if (recursive) file.listRecursively else file.list).length)
 
-	def list(recursive: Boolean = false): M[Iterator[PathM[M]]] =
-		attempt((if (recursive) file.listRecursively else file.list).map {PathM[M]})
+	def list(recursive: Boolean = false): M[Iterator[M[PathM[M]]]] =
+		attempt((if (recursive) file.listRecursively else file.list).map {PathM.checked(_)})
 
 	def contains(that: PathM[M]): Boolean = that.file.path.startsWith(file.path) // XXX can't delegate as the actual method touches the FS
 
 
 }
 object DirM {
-	def apply[M[_]](file: File)(implicit F: MonadThrowable[M]): DirM[M] = new DirM[M](file)
-	def checked[M[_]](file: File)(implicit F: MonadThrowable[M]): M[DirM[M]] = DirM[M](file).checked
-	def home[M[_]](implicit F: MonadThrowable[M]): DirM[M] = apply(File.home)
+	def unchecked[M[_]](file: File)(implicit F: MonadThrowable[M]): DirM[M] = new DirM[M](file)
+	def checked[M[_]](file: File)(implicit F: MonadThrowable[M]): M[DirM[M]] = new DirM[M](file).checked
+	def apply[M[_]](file: File)(implicit F: MonadThrowable[M]): M[DirM[M]] = checked(file)
+	def home[M[_]](implicit F: MonadThrowable[M]): DirM[M] = unchecked(File.home)
+	def pwd[M[_]](implicit F: MonadThrowable[M]): DirM[M] = unchecked(File.currentWorkingDirectory)
+
+
+	def newTempDir[M[_]](prefix: String = "",
+						 parent: Option[DirM[M]] = None,
+						 attrs: Attrs = Attributes.default)
+						(implicit F: MonadThrowable[M]): M[DirM[M]] =
+		F.catchNonFatal(unchecked(newTemporaryDirectory(prefix, parent.map {_.file})(attrs)))
+
 }
 
 
@@ -239,35 +269,21 @@ object PathM {
 
 	type MonadThrowable[M[_]] = MonadError[M, Throwable]
 
-	// TODO isDirectory does not throw, but this touches the FS
-	def apply[M[_]](file: File)(implicit F: MonadThrowable[M]): PathM[M] =
-		if (file.isDirectory) new DirM[M](file) else new FileM[M](file)
 
-	def apply[M[_]](path: Path)(implicit F: MonadThrowable[M]): PathM[M] = apply(File(path))
-	def apply[M[_]](file: java.io.File)(implicit F: MonadThrowable[M]): PathM[M] = apply(file.toScala)
+	def checked[M[_]](file: File)(implicit F: MonadThrowable[M]): M[PathM[M]] =
+		F.catchNonFatal {if (file.isDirectory) new DirM[M](file) else new FileM[M](file)}
+	def checked[M[_]](path: Path)(implicit F: MonadThrowable[M]): M[PathM[M]] = checked(File(path))
+	def checked[M[_]](path: String)(implicit F: MonadThrowable[M]): M[PathM[M]] = checked(File(path))
+	def checked[M[_]](file: java.io.File)(implicit F: MonadThrowable[M]): M[PathM[M]] = checked(file.toScala)
 
-
-	def newTempFile[M[_]]()(implicit F: MonadThrowable[M]): M[FileM[M]] =
-		F.catchNonFatal(newTemporaryFile().liftFile(F))
-
-	def newTempDir[M[_]](prefix: String = "", parent: Option[DirM[M]] = None,
-						 attrs: Attrs = Attributes.default)(implicit F: MonadThrowable[M]): M[DirM[M]] =
-		F.catchNonFatal(newTemporaryDirectory(prefix, parent.map {_.file})(attrs).liftDir(F))
 
 	def newWatchService[M[_]]()(implicit F: MonadThrowable[M]): M[WatchService] =
 		F.catchNonFatal(FileSystems.getDefault.newWatchService())
 
 	implicit class LiftFile(file: File) {
 
-		def lift[M[_]](implicit F: MonadThrowable[M]): PathM[M] = PathM[M](file)(F)
-		def liftM[M[_]](implicit F: MonadThrowable[M]): M[PathM[M]] = F.pure(lift)
-
-		def liftFile[M[_]](implicit F: MonadThrowable[M]): FileM[M] = FileM[M](file)(F)
-		def checkedFileM[M[_]](implicit F: MonadThrowable[M]): M[FileM[M]] = liftFile(F).checked
-
-		def liftDir[M[_]](implicit F: MonadThrowable[M]): DirM[M] = DirM[M](file)(F)
-		def checkedDirM[M[_]](implicit F: MonadThrowable[M]): M[DirM[M]] = liftDir(F).checked
-
+		def liftFile[M[_]](implicit F: MonadThrowable[M]): FileM[M] = FileM.unchecked(file)
+		def liftDir[M[_]](implicit F: MonadThrowable[M]): DirM[M] = DirM.unchecked(file)
 
 	}
 

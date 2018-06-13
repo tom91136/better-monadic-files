@@ -1,13 +1,9 @@
 package net.kurobako.bmf
 
-import java.lang.Thread.UncaughtExceptionHandler
-import java.nio.file.NoSuchFileException
-
 import better.files.File
-import net.kurobako.bmf.PathM._
 import cats.effect.IO
+import net.kurobako.bmf.PathM._
 import org.scalatest.{EitherValues, FlatSpec, Matchers}
-import org.scalactic.TypeCheckedTripleEquals._
 
 class PathMSpec extends FlatSpec with Matchers with EitherValues {
 
@@ -16,13 +12,13 @@ class PathMSpec extends FlatSpec with Matchers with EitherValues {
 
 
 
-		val x: IO[(FileM[IO], Long)] = for{
-			foo <- File.home.liftFile[IO].create()
-			_ <- foo.append("foo")
-			length <- foo.size
-		} yield (foo, length)
+//		val x: IO[(FileM[IO], Long)] = for{
+//			foo <- File.home.liftFile[IO].create()
+//			_ <- foo.append("foo")
+//			length <- foo.size
+//		} yield (foo, length)
 
-		PathM.newTempDir[IO]()
+		DirM.newTempDir[IO]()
 			.bracket { x =>
 				for {
 					before <- x.count()
@@ -37,7 +33,7 @@ class PathMSpec extends FlatSpec with Matchers with EitherValues {
 
 	"exception" should "be contained" in {
 		Thread.setDefaultUncaughtExceptionHandler((t, e) => println(s"[${t.getName}] Silenced:$e"))
-		PathM.newTempDir[IO]().bracket { x =>
+		DirM.newTempDir[IO]().bracket { x =>
 			for {
 				a <- x.delete()
 				b <- a.delete()

@@ -72,7 +72,7 @@ lazy val `better-monadic-files` = project.in(file(".")).settings(
 	libraryDependencies ++= Seq(
 		"com.github.pathikrit" %% "better-files" % "3.4.0",
 		"org.typelevel" %% "cats-core" % "1.1.0",
-		"org.typelevel" %% "cats-effect" % "1.0.0-RC" % Test,
+		"org.typelevel" %% "cats-effect" % "1.0.0-RC2",
 		"org.scalatest" %% "scalatest" % "3.0.1" % Test
 	)
 )
