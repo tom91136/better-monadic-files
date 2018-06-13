@@ -55,10 +55,11 @@ sealed abstract class PathM[M[_]] private[bmf](implicit val F: MonadThrowable[M]
 					F.raiseError[S](new IOException(s"Expected $file to be a regular file(FileM) but was a not"))
 				case x: DirM[M] if x.file.isRegularFile =>
 					F.raiseError[S](new IOException(s"Expected $file to be a directory(DirM) but was a not"))
+				case _                                  => F.pure[S](instance)
 			}
 			case _          => F.raiseError[S](new IOException(s"$file does not exist"))
 		}
-	} yield instance
+	} yield verified
 
 	def asFile(): M[FileM[M]] = FileM.checked(file)
 	def asDir(): M[DirM[M]] = DirM.checked(file)
