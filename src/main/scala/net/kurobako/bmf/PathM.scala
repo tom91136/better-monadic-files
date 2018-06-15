@@ -203,9 +203,9 @@ object FileM {
 	object Digest {
 		def apply(digest: String): Digest = Digest(MessageDigest.getInstance(digest))
 		final val MD5   : Digest = Digest("MD5")
-		final val SHA1  : Digest = Digest("SHA1")
-		final val SHA256: Digest = Digest("SHA256")
-		final val SHA512: Digest = Digest("SHA512")
+		final val SHA1  : Digest = Digest("SHA-1")
+		final val SHA256: Digest = Digest("SHA-256")
+		final val SHA512: Digest = Digest("SHA-512")
 		// TODO CRC32?
 	}
 
