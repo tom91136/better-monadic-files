@@ -190,12 +190,15 @@ object FileM {
 
 	def unchecked[M[_]](file: File)(implicit F: MonadThrowable[M]): FileM[M] = new FileM[M](file)
 	def checked[M[_]](file: File)(implicit F: MonadThrowable[M]): M[FileM[M]] = new FileM[M](file).checked
-	def apply[M[_]](file: File)(implicit F: MonadThrowable[M]): M[FileM[M]] = checked(file)
 
+	def checked[M[_]](file: Path)(implicit F: MonadThrowable[M]): M[FileM[M]] = checked(File(file))
+	def checked[M[_]](file: String)(implicit F: MonadThrowable[M]): M[FileM[M]] = checked(File(file))
+	def checked[M[_]](file: java.io.File)(implicit F: MonadThrowable[M]): M[FileM[M]] = checked(file.toScala)
+
+	def apply[M[_]](file: File)(implicit F: MonadThrowable[M]): M[FileM[M]] = checked(file)
 
 	def newTempFile[M[_]]()(implicit F: MonadThrowable[M]): M[FileM[M]] =
 		F.catchNonFatal(unchecked(newTemporaryFile()))
-
 
 	/** Wraps a backing [[java.security.MessageDigest]] */
 	case class Digest(backing: MessageDigest) extends AnyVal
@@ -246,9 +249,17 @@ final case class DirM[M[_]] private[bmf](file: File)(implicit F: MonadThrowable[
 
 }
 object DirM {
+
 	def unchecked[M[_]](file: File)(implicit F: MonadThrowable[M]): DirM[M] = new DirM[M](file)
 	def checked[M[_]](file: File)(implicit F: MonadThrowable[M]): M[DirM[M]] = new DirM[M](file).checked
+
+	def checked[M[_]](file: Path)(implicit F: MonadThrowable[M]): M[DirM[M]] = checked(File(file))
+	def checked[M[_]](file: String)(implicit F: MonadThrowable[M]): M[DirM[M]] = checked(File(file))
+	def checked[M[_]](file: java.io.File)(implicit F: MonadThrowable[M]): M[DirM[M]] = checked(file.toScala)
+
 	def apply[M[_]](file: File)(implicit F: MonadThrowable[M]): M[DirM[M]] = checked(file)
+
+
 	def home[M[_]](implicit F: MonadThrowable[M]): DirM[M] = unchecked(File.home)
 	def pwd[M[_]](implicit F: MonadThrowable[M]): DirM[M] = unchecked(File.currentWorkingDirectory)
 
