@@ -72,8 +72,10 @@ sealed abstract class PathM[M[_]] private[bmf](implicit val F: MonadThrowable[M]
 	/** Move the file to the specified directory */
 	def moveTo(dir: DirM[M]): M[S] = attempt(newInstance(file.moveToDirectory(dir.file)))
 	/** Delete the file */
+	// TODO does this actually delete recursively for a dir?
 	def delete(): M[S] = attempt {file.delete(); instance}
 	/** Same as [[delete()]] but returns a [[Unit]] */
+	// TODO does this actually delete recursively for a dir?
 	def deleteUnit(): M[Unit] = attempt {file.delete(); ()}
 	/** Rename the file */
 	def rename(name: String): M[S] = attempt(newInstance(file.renameTo(name)))
@@ -197,8 +199,15 @@ object FileM {
 
 	def apply[M[_]](file: File)(implicit F: MonadThrowable[M]): M[FileM[M]] = checked(file)
 
-	def newTempFile[M[_]]()(implicit F: MonadThrowable[M]): M[FileM[M]] =
-		F.catchNonFatal(unchecked(newTemporaryFile()))
+	def newTempFile[M[_]](prefix: String = "",
+						  suffix: String = "",
+						  parent: Option[DirM[M]] = None)(implicit F: MonadThrowable[M]): M[FileM[M]] =
+		F.catchNonFatal(unchecked(newTemporaryFile(prefix, suffix, parent.map {_.file})))
+
+	def tempFile[M[_]](prefix: String = "",
+					   suffix: String = "",
+					   parent: Option[DirM[M]] = None)(implicit F: MonadThrowable[M]): Resource[M, FileM[M]] =
+		Resource.make(newTempFile(prefix, suffix, parent))(_.deleteUnit())
 
 	/** Wraps a backing [[java.security.MessageDigest]] */
 	case class Digest(backing: MessageDigest) extends AnyVal
@@ -269,6 +278,12 @@ object DirM {
 						 attrs: Attrs = Attributes.default)
 						(implicit F: MonadThrowable[M]): M[DirM[M]] =
 		F.catchNonFatal(unchecked(newTemporaryDirectory(prefix, parent.map {_.file})(attrs)))
+
+	def tempDir[M[_]](prefix: String = "",
+					  parent: Option[DirM[M]] = None,
+					  attrs: Attrs = Attributes.default)
+					 (implicit F: MonadThrowable[M]): Resource[M, DirM[M]] =
+		Resource.make(newTempDir(prefix, parent, attrs))(_.deleteUnit())
 
 }
 
