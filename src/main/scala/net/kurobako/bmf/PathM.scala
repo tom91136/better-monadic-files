@@ -63,6 +63,10 @@ sealed abstract class PathM[M[_]] private[bmf](implicit val F: Sync[M]) {
 	def asFile(): M[FileM[M]] = FileM.checked(file)
 	def asDir(): M[DirM[M]] = DirM.checked(file)
 
+	def samePathAs(that: PathM[M]): Boolean = file.isSamePathAs(that.file)
+
+	def sameFileAs(that: PathM[M]): M[Boolean] = attempt(file.isSameFileAs(that.file))
+
 	def isLink(): M[Boolean] = attempt(file.isSymbolicLink)
 	def isHidden(): M[Boolean] = attempt(file.isHidden)
 
@@ -166,8 +170,9 @@ final case class FileM[M[_]] private[bmf](file: File)(implicit F: Sync[M]) exten
 	def fileReader(): Resource[M, FileReader] =
 		resourceFromCloseable(file.newFileReader)
 
+	def appendLines(s: String*): M[FileM[M]] = attempt {file.appendLines(s: _*); instance}
+	def appendBytes(bytes: Array[Byte]): M[FileM[M]] = attempt {file.appendByteArray(bytes); instance}
 
-	def append(s: String): M[FileM[M]] = attempt(newInstance(file.append(s)))
 
 	def overwrite(s: String): M[FileM[M]] = attempt(newInstance(file.overwrite(s)))
 
