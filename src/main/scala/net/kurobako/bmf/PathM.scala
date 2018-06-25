@@ -282,7 +282,7 @@ object DirM {
 					  parent: Option[DirM[M]] = None,
 					  attrs: Attrs = Attributes.default)
 					 (implicit F: Sync[M]): Resource[M, DirM[M]] =
-		Resource.make(newTempDir(prefix, parent, attrs)) { x => println(s"delete $x"); x.deleteUnit() }
+		Resource.make(newTempDir(prefix, parent, attrs)) {_.deleteUnit()}
 
 }
 
