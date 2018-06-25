@@ -7,11 +7,10 @@ import java.security.MessageDigest
 
 import better.files.File._
 import better.files.{DefaultCharset, File, _}
-import cats.MonadError
-import cats.effect.Resource
+import cats.effect.{Resource, Sync}
 import cats.implicits._
 import net.kurobako.bmf.FileM.Digest
-import net.kurobako.bmf.PathM.{Attrs, LinkOps, MonadThrowable, VisitOps}
+import net.kurobako.bmf.PathM.{Attrs, LinkOps, VisitOps}
 
 import scala.util.control.NonFatal
 
@@ -24,7 +23,7 @@ import scala.util.control.NonFatal
   * @tparam M the monad type
   */
 //noinspection AccessorLikeMethodIsEmptyParen
-sealed abstract class PathM[M[_]] private[bmf](implicit val F: MonadThrowable[M]) {
+sealed abstract class PathM[M[_]] private[bmf](implicit val F: Sync[M]) {
 
 	type S <: PathM[M]
 
@@ -37,7 +36,7 @@ sealed abstract class PathM[M[_]] private[bmf](implicit val F: MonadThrowable[M]
 	@inline def path: String = file.pathAsString
 
 	@inline private[bmf] def attempt[A](a: => A): M[A] =
-		try F.pure(a)
+		try F.delay(a)
 		catch {case NonFatal(e) => F.raiseError(e)}
 
 	/** Checks whether the file exists */
@@ -120,7 +119,7 @@ sealed abstract class PathM[M[_]] private[bmf](implicit val F: MonadThrowable[M]
   * @param F the [[ MonadError[F[_], A] ]] instance
   * @tparam M the monad type
   */
-final case class FileM[M[_]] private[bmf](file: File)(implicit F: MonadThrowable[M]) extends PathM[M] {
+final case class FileM[M[_]] private[bmf](file: File)(implicit F: Sync[M]) extends PathM[M] {
 
 	type S = FileM[M]
 	private[bmf] override val newInstance: File => FileM[M] = new FileM[M](_)
@@ -190,23 +189,23 @@ final case class FileM[M[_]] private[bmf](file: File)(implicit F: MonadThrowable
 }
 object FileM {
 
-	def unchecked[M[_]](file: File)(implicit F: MonadThrowable[M]): FileM[M] = new FileM[M](file)
-	def checked[M[_]](file: File)(implicit F: MonadThrowable[M]): M[FileM[M]] = new FileM[M](file).checked
+	def unchecked[M[_]](file: File)(implicit F: Sync[M]): FileM[M] = new FileM[M](file)
+	def checked[M[_]](file: File)(implicit F: Sync[M]): M[FileM[M]] = new FileM[M](file).checked
 
-	def checked[M[_]](file: Path)(implicit F: MonadThrowable[M]): M[FileM[M]] = checked(File(file))
-	def checked[M[_]](file: String)(implicit F: MonadThrowable[M]): M[FileM[M]] = checked(File(file))
-	def checked[M[_]](file: java.io.File)(implicit F: MonadThrowable[M]): M[FileM[M]] = checked(file.toScala)
+	def checked[M[_]](file: Path)(implicit F: Sync[M]): M[FileM[M]] = checked(File(file))
+	def checked[M[_]](file: String)(implicit F: Sync[M]): M[FileM[M]] = checked(File(file))
+	def checked[M[_]](file: java.io.File)(implicit F: Sync[M]): M[FileM[M]] = checked(file.toScala)
 
-	def apply[M[_]](file: File)(implicit F: MonadThrowable[M]): M[FileM[M]] = checked(file)
+	def apply[M[_]](file: File)(implicit F: Sync[M]): M[FileM[M]] = checked(file)
 
 	def newTempFile[M[_]](prefix: String = "",
 						  suffix: String = "",
-						  parent: Option[DirM[M]] = None)(implicit F: MonadThrowable[M]): M[FileM[M]] =
+						  parent: Option[DirM[M]] = None)(implicit F: Sync[M]): M[FileM[M]] =
 		F.catchNonFatal(unchecked(newTemporaryFile(prefix, suffix, parent.map {_.file})))
 
 	def tempFile[M[_]](prefix: String = "",
 					   suffix: String = "",
-					   parent: Option[DirM[M]] = None)(implicit F: MonadThrowable[M]): Resource[M, FileM[M]] =
+					   parent: Option[DirM[M]] = None)(implicit F: Sync[M]): Resource[M, FileM[M]] =
 		Resource.make(newTempFile(prefix, suffix, parent))(_.deleteUnit())
 
 	/** Wraps a backing [[java.security.MessageDigest]] */
@@ -230,7 +229,7 @@ object FileM {
   * @param F the [[ MonadError[F[_], A] ]] instance
   * @tparam M the monad type
   */
-final case class DirM[M[_]] private[bmf](file: File)(implicit F: MonadThrowable[M]) extends PathM[M] {
+final case class DirM[M[_]] private[bmf](file: File)(implicit F: Sync[M]) extends PathM[M] {
 
 	type S = DirM[M]
 
@@ -259,31 +258,31 @@ final case class DirM[M[_]] private[bmf](file: File)(implicit F: MonadThrowable[
 }
 object DirM {
 
-	def unchecked[M[_]](file: File)(implicit F: MonadThrowable[M]): DirM[M] = new DirM[M](file)
-	def checked[M[_]](file: File)(implicit F: MonadThrowable[M]): M[DirM[M]] = new DirM[M](file).checked
+	def unchecked[M[_]](file: File)(implicit F: Sync[M]): DirM[M] = new DirM[M](file)
+	def checked[M[_]](file: File)(implicit F: Sync[M]): M[DirM[M]] = new DirM[M](file).checked
 
-	def checked[M[_]](file: Path)(implicit F: MonadThrowable[M]): M[DirM[M]] = checked(File(file))
-	def checked[M[_]](file: String)(implicit F: MonadThrowable[M]): M[DirM[M]] = checked(File(file))
-	def checked[M[_]](file: java.io.File)(implicit F: MonadThrowable[M]): M[DirM[M]] = checked(file.toScala)
+	def checked[M[_]](file: Path)(implicit F: Sync[M]): M[DirM[M]] = checked(File(file))
+	def checked[M[_]](file: String)(implicit F: Sync[M]): M[DirM[M]] = checked(File(file))
+	def checked[M[_]](file: java.io.File)(implicit F: Sync[M]): M[DirM[M]] = checked(file.toScala)
 
-	def apply[M[_]](file: File)(implicit F: MonadThrowable[M]): M[DirM[M]] = checked(file)
+	def apply[M[_]](file: File)(implicit F: Sync[M]): M[DirM[M]] = checked(file)
 
 
-	def home[M[_]](implicit F: MonadThrowable[M]): DirM[M] = unchecked(File.home)
-	def pwd[M[_]](implicit F: MonadThrowable[M]): DirM[M] = unchecked(File.currentWorkingDirectory)
+	def home[M[_]](implicit F: Sync[M]): DirM[M] = unchecked(File.home)
+	def pwd[M[_]](implicit F: Sync[M]): DirM[M] = unchecked(File.currentWorkingDirectory)
 
 
 	def newTempDir[M[_]](prefix: String = "",
 						 parent: Option[DirM[M]] = None,
 						 attrs: Attrs = Attributes.default)
-						(implicit F: MonadThrowable[M]): M[DirM[M]] =
+						(implicit F: Sync[M]): M[DirM[M]] =
 		F.catchNonFatal(unchecked(newTemporaryDirectory(prefix, parent.map {_.file})(attrs)))
 
 	def tempDir[M[_]](prefix: String = "",
 					  parent: Option[DirM[M]] = None,
 					  attrs: Attrs = Attributes.default)
-					 (implicit F: MonadThrowable[M]): Resource[M, DirM[M]] =
-		Resource.make(newTempDir(prefix, parent, attrs))(_.deleteUnit())
+					 (implicit F: Sync[M]): Resource[M, DirM[M]] =
+		Resource.make(newTempDir(prefix, parent, attrs)) { x => println(s"delete $x"); x.deleteUnit() }
 
 }
 
@@ -294,23 +293,21 @@ object PathM {
 	type Attrs = Attributes
 	type LinkOps = LinkOptions
 
-	type MonadThrowable[M[_]] = MonadError[M, Throwable]
 
-
-	def checked[M[_]](file: File)(implicit F: MonadThrowable[M]): M[PathM[M]] =
+	def checked[M[_]](file: File)(implicit F: Sync[M]): M[PathM[M]] =
 		F.catchNonFatal {if (file.isDirectory) new DirM[M](file) else new FileM[M](file)}
-	def checked[M[_]](path: Path)(implicit F: MonadThrowable[M]): M[PathM[M]] = checked(File(path))
-	def checked[M[_]](path: String)(implicit F: MonadThrowable[M]): M[PathM[M]] = checked(File(path))
-	def checked[M[_]](file: java.io.File)(implicit F: MonadThrowable[M]): M[PathM[M]] = checked(file.toScala)
+	def checked[M[_]](path: Path)(implicit F: Sync[M]): M[PathM[M]] = checked(File(path))
+	def checked[M[_]](path: String)(implicit F: Sync[M]): M[PathM[M]] = checked(File(path))
+	def checked[M[_]](file: java.io.File)(implicit F: Sync[M]): M[PathM[M]] = checked(file.toScala)
 
 
-	def newWatchService[M[_]]()(implicit F: MonadThrowable[M]): M[WatchService] =
+	def newWatchService[M[_]]()(implicit F: Sync[M]): M[WatchService] =
 		F.catchNonFatal(FileSystems.getDefault.newWatchService())
 
 	implicit class LiftFile(file: File) {
 
-		def liftFile[M[_]](implicit F: MonadThrowable[M]): FileM[M] = FileM.unchecked(file)
-		def liftDir[M[_]](implicit F: MonadThrowable[M]): DirM[M] = DirM.unchecked(file)
+		def liftFile[M[_]](implicit F: Sync[M]): FileM[M] = FileM.unchecked(file)
+		def liftDir[M[_]](implicit F: Sync[M]): DirM[M] = DirM.unchecked(file)
 
 	}
 

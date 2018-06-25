@@ -1,22 +1,19 @@
 package net.kurobako.bmf
 
-import better.files.File
-import cats.effect.IO
-import net.kurobako.bmf.PathM._
+import cats.effect.{IO, Resource}
+import cats.implicits._
 import org.scalatest.{EitherValues, FlatSpec, Matchers}
 
 class PathMSpec extends FlatSpec with Matchers with EitherValues {
 
-	"createTempFile" should "work with Bracket typeclasses" in {
+	"newTempDir" should "work with Bracket typeclasses" in {
 
 
-
-
-//		val x: IO[(FileM[IO], Long)] = for{
-//			foo <- File.home.liftFile[IO].create()
-//			_ <- foo.append("foo")
-//			length <- foo.size
-//		} yield (foo, length)
+		//		val x: IO[(FileM[IO], Long)] = for{
+		//			foo <- File.home.liftFile[IO].create()
+		//			_ <- foo.append("foo")
+		//			length <- foo.size
+		//		} yield (foo, length)
 
 		DirM.newTempDir[IO]()
 			.bracket { x =>
@@ -30,6 +27,13 @@ class PathMSpec extends FlatSpec with Matchers with EitherValues {
 			} {_.deleteUnit()}.unsafeRunSync() should ===((0, true, 1))
 	}
 
+	"tempDir" should "not delete file in comprehension" in {
+		val x: Resource[IO, (DirM[IO], DirM[IO])] = for {
+			a <- DirM.tempDir[IO]("a")
+			b <- DirM.tempDir[IO]("b")
+		} yield a -> b
+		x.use { case (a, b) => a.checked *> b.checked *> IO.unit }.unsafeRunSync()
+	}
 
 	"exception" should "be contained" in {
 		Thread.setDefaultUncaughtExceptionHandler((t, e) => println(s"[${t.getName}] Silenced:$e"))
