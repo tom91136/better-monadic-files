@@ -34,6 +34,7 @@ sealed abstract class PathM[M[_]] private[bmf](implicit val F: Sync[M]) {
 
 	/** The path of the file, equivalent to {{{java.nio.file.Path.toString}}} */
 	@inline def path: String = file.pathAsString
+	@inline def nioPath: Path = file.path
 
 	@inline private[bmf] def attempt[A](a: => A): M[A] =
 		try F.delay(a)
