@@ -12,15 +12,14 @@ import cats.implicits._
 import net.kurobako.bmf.FileM.Digest
 import net.kurobako.bmf.PathM.{Attrs, LinkOps, VisitOps}
 
-import scala.util.control.NonFatal
 
 /** Represents a path; contains operations common to files and directories
   *
   * Operations that causes side effects(does actual IO) will return a `M[_]`; operations
   * that do not have side effects will simply return the value.
   *
-  * @param F the [[ MonadError[F[_], A] ]] instance
-  * @tparam M the monad type
+  * @param F the [[ Sync ]] instance
+  * @tparam M the effect type
   */
 //noinspection AccessorLikeMethodIsEmptyParen
 sealed abstract class PathM[M[_]] private[bmf](implicit val F: Sync[M]) {
@@ -36,16 +35,12 @@ sealed abstract class PathM[M[_]] private[bmf](implicit val F: Sync[M]) {
 	@inline def path: String = file.pathAsString
 	@inline def nioPath: Path = file.path
 
-	@inline private[bmf] def attempt[A](a: => A): M[A] =
-		try F.delay(a)
-		catch {case NonFatal(e) => F.raiseError(e)}
-
 	/** Checks whether the file exists */
 	def exists(implicit lops: LinkOps = LinkOptions.default): M[Boolean] =
-		attempt(file.exists(lops))
+		F.delay(file.exists(lops))
 
 	def verifiedExists()(implicit lops: LinkOps = LinkOptions.default): M[Option[Boolean]] =
-		attempt(file.verifiedExists(lops))
+		F.delay(file.verifiedExists(lops))
 
 	def checked(implicit lops: LinkOps = LinkOptions.default): M[S] = for {
 		exists <- verifiedExists()(lops)
@@ -66,34 +61,34 @@ sealed abstract class PathM[M[_]] private[bmf](implicit val F: Sync[M]) {
 
 	def samePathAs(that: PathM[M]): Boolean = file.isSamePathAs(that.file)
 
-	def sameFileAs(that: PathM[M]): M[Boolean] = attempt(file.isSameFileAs(that.file))
+	def sameFileAs(that: PathM[M]): M[Boolean] = F.delay(file.isSameFileAs(that.file))
 
-	def isLink(): M[Boolean] = attempt(file.isSymbolicLink)
-	def isHidden(): M[Boolean] = attempt(file.isHidden)
+	def isLink(): M[Boolean] = F.delay(file.isSymbolicLink)
+	def isHidden(): M[Boolean] = F.delay(file.isHidden)
 
 	/** Copy the file to the specified directory */
-	def copyTo(dir: DirM[M]): M[S] = attempt(newInstance(file.copyToDirectory(dir.file)))
+	def copyTo(dir: DirM[M]): M[S] = F.delay(newInstance(file.copyToDirectory(dir.file)))
 	/** Move the file to the specified directory */
-	def moveTo(dir: DirM[M]): M[S] = attempt(newInstance(file.moveToDirectory(dir.file)))
+	def moveTo(dir: DirM[M]): M[S] = F.delay(newInstance(file.moveToDirectory(dir.file)))
 	/** Delete the file */
 	// TODO does this actually delete recursively for a dir?
-	def delete(): M[S] = attempt {file.delete(); instance}
+	def delete(): M[S] = F.delay {file.delete(); instance}
 	/** Same as [[delete()]] but returns a [[Unit]] */
 	// TODO does this actually delete recursively for a dir?
-	def deleteUnit(): M[Unit] = attempt {file.delete(); ()}
+	def deleteUnit(): M[Unit] = F.delay {file.delete(); ()}
 	/** Rename the file */
-	def rename(name: String): M[S] = attempt(newInstance(file.renameTo(name)))
+	def rename(name: String): M[S] = F.delay(newInstance(file.renameTo(name)))
 
 
 	def watch(watchService: WatchService, events: Events = Events.all): M[S] =
-		attempt {file.register(watchService, events); instance}
+		F.delay {file.register(watchService, events); instance}
 
 	def name: Option[String] = file.nameOption
 	def nameOrEmpty: String = file.name
 
 	def parent(): Option[DirM[M]] = file.parentOption.map {new DirM[M](_)}
 	// XXX not ideal
-	def siblings(): M[Iterator[M[PathM[M]]]] = attempt(file.siblings.map {PathM.checked(_)})
+	def siblings(): M[Iterator[M[PathM[M]]]] = F.delay(file.siblings.map {PathM.checked(_)})
 
 
 	def create(mkParent: Boolean = false)(implicit attrs: Attrs = Attributes.default,
@@ -117,7 +112,8 @@ sealed abstract class PathM[M[_]] private[bmf](implicit val F: Sync[M]) {
 
 }
 
-/** Represents an actual file(not directory); contains operations specific to a file
+/** Represents a regular file with content(i.e not a directory); contains operations specific to a
+  * regular file.
   *
   * Effects are documented using the monads, see [[PathM]] for more details.
   *
@@ -133,29 +129,29 @@ final case class FileM[M[_]] private[bmf](file: File)(implicit F: Sync[M]) exten
 	@inline override def isDir: Boolean = false
 	override def create(mkParent: Boolean = false)(implicit attrs: Attrs = Attributes.default,
 												   lops: LinkOps = LinkOptions.default): M[FileM[M]] =
-		attempt(newInstance(file.createIfNotExists(asDirectory = false, createParents = mkParent)))
+		F.delay(newInstance(file.createIfNotExists(asDirectory = false, createParents = mkParent)))
 
 	override def createIfNotExists(mkParent: Boolean = false)(implicit attrs: Attrs = Attributes.default,
 															  lops: LinkOps = LinkOptions.default): M[FileM[M]] =
-		attempt(newInstance(file.createIfNotExists(asDirectory = false, createParents = mkParent)))
+		F.delay(newInstance(file.createIfNotExists(asDirectory = false, createParents = mkParent)))
 
 	def isLocked(mode: RandomAccessMode,
 				 position: Long = 0L,
 				 size: Long = Long.MaxValue,
 				 isShared: Boolean = false)(implicit linkOps: LinkOps = LinkOptions.default): M[Boolean] =
-		attempt(file.isLocked(mode, position, size, isShared)(linkOps))
+		F.delay(file.isLocked(mode, position, size, isShared)(linkOps))
 
-	def size(implicit vops: VisitOps = VisitOptions.default): M[Long] = attempt(file.size(vops))
+	def size(implicit vops: VisitOps = VisitOptions.default): M[Long] = F.delay(file.size(vops))
 
-	def as[A]()(implicit ev: Array[Byte] => A): M[A] = attempt(ev.apply(file.byteArray))
+	def as[A]()(implicit ev: Array[Byte] => A): M[A] = F.delay(ev.apply(file.byteArray))
 
 	def asString()(implicit charset: Charset = DefaultCharset): M[String] =
-		attempt(file.contentAsString(charset))
+		F.delay(file.contentAsString(charset))
 
-	def asBytes(): M[Array[Byte]] = attempt(file.loadBytes)
+	def asBytes(): M[Array[Byte]] = F.delay(file.loadBytes)
 
 	private def resourceFromCloseable[A <: Closeable](a: => A): Resource[M, A] =
-		Resource.make(attempt(a)) { x => attempt(x.close()) }
+		Resource.make(F.delay(a)) { x => F.delay(x.close()) }
 
 	def bufferedReader(implicit charset: Charset = DefaultCharset): Resource[M, BufferedReader] =
 		resourceFromCloseable(file.newBufferedReader(charset))
@@ -171,15 +167,15 @@ final case class FileM[M[_]] private[bmf](file: File)(implicit F: Sync[M]) exten
 	def fileReader(): Resource[M, FileReader] =
 		resourceFromCloseable(file.newFileReader)
 
-	def appendLines(s: String*): M[FileM[M]] = attempt {file.appendLines(s: _*); instance}
-	def appendBytes(bytes: Array[Byte]): M[FileM[M]] = attempt {file.appendByteArray(bytes); instance}
+	def appendLines(s: String*): M[FileM[M]] = F.delay {file.appendLines(s: _*); instance}
+	def appendBytes(bytes: Array[Byte]): M[FileM[M]] = F.delay {file.appendByteArray(bytes); instance}
 
 
-	def overwrite(s: String): M[FileM[M]] = attempt(newInstance(file.overwrite(s)))
+	def overwrite(s: String): M[FileM[M]] = F.delay(newInstance(file.overwrite(s)))
 
-	def hash(digest: Digest): M[String] = attempt(file.checksum(digest.backing))
+	def hash(digest: Digest): M[String] = F.delay(file.checksum(digest.backing))
 
-	def contentType(): M[Option[String]] = attempt(file.contentType)
+	def contentType(): M[Option[String]] = F.delay(file.contentType)
 
 	def hasExtension: Boolean = file.name.contains(".")
 
@@ -228,7 +224,8 @@ object FileM {
 
 }
 
-/** Represents an actual directory; contains operations specific to a directory
+/** Represents an actual directory(i.e not a regular file); contains operations specific to a
+  * directory
   *
   * Effects are documented using the monads, see [[PathM]] for more details.
   *
@@ -246,17 +243,17 @@ final case class DirM[M[_]] private[bmf](file: File)(implicit F: Sync[M]) extend
 
 	override def create(mkParent: Boolean = false)(implicit attrs: Attrs = Attributes.default,
 												   lops: LinkOps = LinkOptions.default): M[DirM[M]] =
-		attempt(newInstance(file.createIfNotExists(asDirectory = true, createParents = mkParent)))
+		F.delay(newInstance(file.createIfNotExists(asDirectory = true, createParents = mkParent)))
 
 	override def createIfNotExists(mkParent: Boolean = false)(implicit attrs: Attrs = Attributes.default,
 															  lops: LinkOps = LinkOptions.default): M[DirM[M]] =
-		attempt(newInstance(file.createIfNotExists(asDirectory = true, createParents = mkParent)))
+		F.delay(newInstance(file.createIfNotExists(asDirectory = true, createParents = mkParent)))
 
 	def count(recursive: Boolean = false)(implicit vops: VisitOps = VisitOptions.default): M[Int] =
-		attempt((if (recursive) file.listRecursively else file.list).length)
+		F.delay((if (recursive) file.listRecursively else file.list).length)
 
 	def list(recursive: Boolean = false): M[Iterator[M[PathM[M]]]] =
-		attempt((if (recursive) file.listRecursively else file.list).map {PathM.checked(_)})
+		F.delay((if (recursive) file.listRecursively else file.list).map {PathM.checked(_)})
 
 	def contains(that: PathM[M]): Boolean = that.file.path.startsWith(file.path) // XXX can't delegate as the actual method touches the FS
 
