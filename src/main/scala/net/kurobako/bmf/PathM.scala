@@ -1,5 +1,6 @@
 package net.kurobako.bmf
 
+import java.io
 import java.io._
 import java.nio.charset.Charset
 import java.nio.file.{FileSystems, Path, WatchService}
@@ -33,7 +34,10 @@ sealed abstract class PathM[M[_]] private[bmf](implicit val F: Sync[M]) {
 
 	/** The path of the file, equivalent to {{{java.nio.file.Path.toString}}} */
 	@inline def path: String = file.pathAsString
+	/** The backing [[java.nio.file.Path]] of the file */
 	@inline def nioPath: Path = file.path
+	/** The backing [[java.nio.file.Path]] but converted to Java's legacy [[java.io.File]] */
+	@inline def asJava: io.File = file.toJava
 
 	/** Checks whether the file exists */
 	def exists(implicit lops: LinkOps = LinkOptions.default): M[Boolean] =
