@@ -195,6 +195,11 @@ final case class FileM[M[_]] private[bmf](file: File)(implicit F: Sync[M]) exten
 }
 object FileM {
 
+	def create[M[_]](file: String, mkParent: Boolean = false)(implicit F: Sync[M]): M[FileM[M]] =
+		unchecked(File(file)).create(mkParent)
+	def createIfNotExists[M[_]](file: String, mkParent: Boolean = false)(implicit F: Sync[M]): M[FileM[M]] =
+		unchecked(File(file)).createIfNotExists(mkParent)
+
 	def unchecked[M[_]](file: File)(implicit F: Sync[M]): FileM[M] = new FileM[M](file)
 	def checked[M[_]](file: File)(implicit F: Sync[M]): M[FileM[M]] = new FileM[M](file).checked
 
@@ -264,6 +269,12 @@ final case class DirM[M[_]] private[bmf](file: File)(implicit F: Sync[M]) extend
 
 }
 object DirM {
+
+	def create[M[_]](file: String, mkParent: Boolean = false)(implicit F: Sync[M]): M[DirM[M]] =
+		unchecked(File(file)).create(mkParent)
+	def createIfNotExists[M[_]](file: String, mkParent: Boolean = false)(implicit F: Sync[M]): M[DirM[M]] =
+		unchecked(File(file)).createIfNotExists(mkParent)
+
 
 	def unchecked[M[_]](file: File)(implicit F: Sync[M]): DirM[M] = new DirM[M](file)
 	def checked[M[_]](file: File)(implicit F: Sync[M]): M[DirM[M]] = new DirM[M](file).checked
