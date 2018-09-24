@@ -5,6 +5,7 @@ import java.io._
 import java.nio.charset.Charset
 import java.nio.file.{FileSystems, Path, WatchService}
 import java.security.MessageDigest
+import java.time.Instant
 
 import better.files.File._
 import better.files.{DefaultCharset, File, _}
@@ -146,6 +147,16 @@ final case class FileM[M[_]] private[bmf](file: File)(implicit F: Sync[M]) exten
 		F.delay(file.isLocked(mode, position, size, isShared)(linkOps))
 
 	def size(implicit vops: VisitOps = VisitOptions.default): M[Long] = F.delay(file.size(vops))
+
+	def touchNow()(implicit attrs: Attrs = Attributes.default,
+				   lops: LinkOps = LinkOptions.default): M[Unit] =
+		F.delay(Instant.now()).flatMap(touch(_)(attrs, lops))
+	def touch(time: Instant)(implicit attrs: Attrs = Attributes.default,
+							 lops: LinkOps = LinkOptions.default): M[Unit] =
+		F.delay(file.touch(time)(attrs, lops))
+
+	def lastModified()(implicit lops: LinkOps = LinkOptions.default): M[Instant] =
+		F.delay(file.lastModifiedTime(lops))
 
 	def as[A]()(implicit ev: Array[Byte] => A): M[A] = F.delay(ev.apply(file.byteArray))
 
