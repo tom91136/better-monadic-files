@@ -70,9 +70,9 @@ lazy val `better-monadic-files` = project.in(file(".")).settings(
 		"-Xlint:all"),
 	addCompilerPlugin("com.olegpy" %% "better-monadic-for" % "0.2.4"),
 	libraryDependencies ++= Seq(
-		"com.github.pathikrit" %% "better-files" % "3.4.0",
-		"org.typelevel" %% "cats-core" % "1.4.0",
-		"org.typelevel" %% "cats-effect" % "1.0.0",
+		"com.github.pathikrit" %% "better-files" % "3.7.0",
+		"org.typelevel" %% "cats-core" % "1.5.0",
+		"org.typelevel" %% "cats-effect" % "1.1.0",
 		"org.scalatest" %% "scalatest" % "3.0.1" % Test
 	)
 )
